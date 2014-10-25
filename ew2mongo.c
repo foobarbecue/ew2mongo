@@ -123,7 +123,7 @@ data = (long *) ((char *) &tpkt + sizeof(TRACE2X_HEADER));
 
 /* Check program arguments
    ***********************/
-   if ( argc != 2 )
+   if ( argc != 3 )
    {
       printf( "Usage:  ew2mongo <ringname> <mongo connection URI> \n" );
       return -1;
@@ -314,6 +314,7 @@ data = (long *) ((char *) &tpkt + sizeof(TRACE2X_HEADER));
 /* Detach from shared memory, mongodb, and terminate
    ***********************************************/
    tport_detach( &inRegion );
+   mongoc_collection_destroy (collection);
    mongoc_client_destroy (client);
    return 0;
 }
@@ -350,6 +351,4 @@ void write2mongo(MSG_LOGO logo, mongoc_collection_t * collection, long * data, l
     }
     bson_destroy (doc);
     }
-    mongoc_collection_destroy (collection);
-
 }

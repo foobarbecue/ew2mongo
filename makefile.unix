@@ -10,7 +10,7 @@ L = $(EW_HOME)/$(EW_VERSION)/lib
 OBJS = ew2mongo.o $L/libew.a $L/errexit.o
 
 sniffring: $(OBJS)
-	$(CC) $(CFLAGS) -o $B/sniffring2mongo $(OBJS)  $(SPECIFIC_FLAGS) -lbson-1.0 -lmongoc-1.0
+	$(CC) $(CFLAGS) -o $B/ew2mongo $(OBJS)  $(SPECIFIC_FLAGS) -lbson-1.0 -lmongoc-1.0
 
 lint:
 	lint ew2mongo.c $(GLOBALFLAGS)
