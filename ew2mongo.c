@@ -91,10 +91,11 @@ static unsigned char TypeMseed;     /* binary compressed mseed waveform msg     
 static unsigned char InstToGet;
 static unsigned char TypeToGet;
 static unsigned char ModToGet;
+
 TracePacket     tpkt;
 long * data;
 
-void write2mongo( MSG_LOGO logo, long * data, long length, int inseq );
+// void write2mongo( MSG_LOGO logo, struct *client, long * data, long length, int inseq );
 
 int main( int argc, char *argv[] )
 {
@@ -103,6 +104,8 @@ int main( int argc, char *argv[] )
    MSG_LOGO logo;
    char     *inRing;           /* Name of input ring           */
    long     inkey;             /* Key to input ring            */
+   mongoc_client_t *client;     /* Connection to mongodb client */
+   mongoc_collection_t *collection;
    char  msg[4096];
    unsigned char inseq;        /* transport seq# in input ring */
    int      rc;
@@ -120,29 +123,13 @@ data = (long *) ((char *) &tpkt + sizeof(TRACE2X_HEADER));
 
 /* Check program arguments
    ***********************/
-   if ( (argc < 2) || (argc > 7) )
+   if ( argc != 2 )
    {
-      printf( "Usage 1:  ew2mongo [-n] <ringname> <mongo connection URI>\n" );
-      printf( "Usage 2:  ew2mongo [-n] <ringname> <mongo connection URI> <instid> <mod> <type>\n" );
-      printf( "Usage 3:  ew2mongo [-n] <ringname> <mongo connection URI> verbose \n" );
-      printf( "Usage 4:  ew2mongo [-n] <ringname> <mongo connection URI> <instid> <mod> <type> verbose\n" );
-      printf( "Sniffring shows full ring, inst and module names if 'v' or \n" );
-      printf( "'verbose' is specified as the final parameter. Otherwise you'll\n" );
-      printf( "see numeric IDs for these three, as defined in earthworm*.d files. \n" );
-      printf( "(Modules from external installations are not identified other than by number.)\n" );
-      printf( "A new option is -n to not flush the ring of all messages first, must be before ringname if used\n" );
-      printf( "the default is to flush the ring of all messages and only show those that come in after invocation\n" );
+      printf( "Usage:  ew2mongo <ringname> <mongo connection URI> \n" );
       return -1;
    }
 
-
-   if (strcmp(argv[1], "-n") == 0)
-   {
-       no_flush = 1; /* DO NOT FLUSH the buffer first, show all old messages first */
-       inRing  = argv[2];
-   } else {
-       inRing  = argv[1];
-   }
+   inRing  = argv[1];
 
 /* Look up local installation id
    *****************************/
@@ -158,7 +145,7 @@ data = (long *) ((char *) &tpkt + sizeof(TRACE2X_HEADER));
       return -1;
    }
 
-/* Look up module ids & message types earthworm.h tables
+/* Look up module ids & message types in earthworm.h tables
    ****************************************************/
    if ( GetModId( "MOD_WILDCARD", &ModWildCard ) != 0 )
    {
@@ -197,39 +184,11 @@ data = (long *) ((char *) &tpkt + sizeof(TRACE2X_HEADER));
    }
 
 
-   if ((argc == 2) || (argc == 3) || (argc == 4))
-   {
    /* Initialize getlogo to all wildcards (get any message)
     ******************************************************/
       getlogo[0].type   = TypeWildCard;
       getlogo[0].mod    = ModWildCard;
       getlogo[0].instid = InstWildCard;
-   }
-   if ( !no_flush && ((argc == 2) || (argc == 5)) || (no_flush && (argc == 3 || argc == 6))) {
-      verbose = 0;
-   }
-   if ((argc == 5+no_flush) || (argc == 6+no_flush))  {
-      if (GetInst (argv[2+no_flush], &InstToGet) != 0)
-      {
-         printf( "ew2mongo: Invalid installation name %s", argv[2]);
-         return -1;
-      }
-      if (GetModId (argv[3+no_flush], &ModToGet) != 0)
-      {
-         printf( "ew2mongo: Invalid module name %s", argv[3]);
-         return -1;
-      }
-      if (GetType (argv[4+no_flush], &TypeToGet) != 0)
-      {
-         printf( "ew2mongo: Message of type name %s not found in earthworm.d or earthworm_global.d", argv[4]);
-         return -1;
-      }
-      getlogo[0].type   = TypeToGet;
-      getlogo[0].mod    = ModToGet;
-      getlogo[0].instid = InstToGet;
-   }
-
-
 
 /* Look up transport region keys earthworm.h tables
    ************************************************/
@@ -244,7 +203,13 @@ data = (long *) ((char *) &tpkt + sizeof(TRACE2X_HEADER));
    ******************************************/
    tport_attach( &inRegion,  inkey );
 
-
+/* TODO: Open mongodb connection and collection, handle issues
+   *********************************************/
+   mongoc_init ();
+   client = mongoc_client_new (argv[2]);
+   // TODO instead of ew_msgs, the collection should be named after the wave ring
+   collection = mongoc_client_get_collection (client, "meteor", "ew_msgs");
+    
 /* Flush all old messages from the ring
    ************************************/
    if (!no_flush) {
@@ -314,14 +279,14 @@ data = (long *) ((char *) &tpkt + sizeof(TRACE2X_HEADER));
           ****************************************/
           printf( "%d Received %s %s %s <seq:%3d> <Length:%6ld> and gonna write to mongo\n",
               (int)time (NULL), InstName, ModName, TypeName, (int)inseq, length );
-          write2mongo( logo, data, length, inseq );
+              write2mongo( logo, collection, data, length, inseq );
       } else {
           /* Backward compatibility */
           /* Print message logo, etc. to the screen
           ****************************************/
           printf( "%d Received <inst:%3d> <mod:%3d> <type:%3d> <seq:%3d> <Length:%6ld> in compat part\n",
                   (int)time (NULL),  (int)logo.instid, (int)logo.mod, (int)logo.type, (int)inseq, length );
-		  write2mongo( logo, data, length, inseq );
+		  write2mongo( logo, collection, data, length, inseq );
       }
       fflush( stdout );
 
@@ -346,23 +311,19 @@ data = (long *) ((char *) &tpkt + sizeof(TRACE2X_HEADER));
       fflush( stdout );
    }
 
-/* Detach from shared memory regions and terminate
+/* Detach from shared memory, mongodb, and terminate
    ***********************************************/
    tport_detach( &inRegion );
+   mongoc_client_destroy (client);
    return 0;
 }
 
-void write2mongo(MSG_LOGO logo, long * data, long length, int inseq){
-    mongoc_client_t *client;
-    mongoc_collection_t *collection;
+void write2mongo(MSG_LOGO logo, mongoc_collection_t * collection, long * data, long length, int inseq){
+
     mongoc_cursor_t *cursor;
     bson_error_t error;
     bson_oid_t oid;
     bson_t *doc;
-
-    mongoc_init ();
-    client = mongoc_client_new ("mongodb://localhost:3001/meteor");
-    collection = mongoc_client_get_collection (client, "meteor", "ew_traces");
 	if (logo.type == TypeTraceBuf2){
     doc = bson_new ();
     bson_oid_init (&oid, NULL);
@@ -370,11 +331,11 @@ void write2mongo(MSG_LOGO logo, long * data, long length, int inseq){
 //      BSON_APPEND_UTF8 (doc, "msgtype", (char)logo.type);
     BSON_APPEND_INT32 (doc, "nsamp", tpkt.trh.nsamp);
     /* libbson expects a int64 in ms since epoch. Giving it a double in s instead. */
-	BSON_APPEND_DATE_TIME (doc, "starttime", (int64_t)tpkt.trh.starttime * 1000);
-	BSON_APPEND_DATE_TIME (doc, "endtime", (int64_t)tpkt.trh.endtime * 1000);
-	BSON_APPEND_UTF8 (doc, "sta", (const char *)&tpkt.trh.sta);
-	BSON_APPEND_UTF8 (doc, "chan", (const char *)&tpkt.trh.chan);
-	BSON_APPEND_UTF8 (doc, "net", (const char *)&tpkt.trh.net);
+    BSON_APPEND_DATE_TIME (doc, "starttime", (int64_t)tpkt.trh.starttime * 1000);
+    BSON_APPEND_DATE_TIME (doc, "endtime", (int64_t)tpkt.trh.endtime * 1000);
+    BSON_APPEND_UTF8 (doc, "sta", (const char *)&tpkt.trh.sta);
+    BSON_APPEND_UTF8 (doc, "chan", (const char *)&tpkt.trh.chan);
+    BSON_APPEND_UTF8 (doc, "net", (const char *)&tpkt.trh.net);
     BSON_APPEND_UTF8 (doc, "msgmod", (const char *)GetModIdName(logo.mod));
     BSON_APPEND_DOUBLE (doc, "samprate", tpkt.trh.samprate);
     BSON_APPEND_UTF8 (doc, "dtype", (const char *)&tpkt.trh.datatype);
@@ -390,5 +351,5 @@ void write2mongo(MSG_LOGO logo, long * data, long length, int inseq){
     bson_destroy (doc);
     }
     mongoc_collection_destroy (collection);
-    mongoc_client_destroy (client);
-	}
+
+}
