@@ -123,9 +123,9 @@ data = (long *) ((char *) &tpkt + sizeof(TRACE2X_HEADER));
 
 /* Check program arguments
    ***********************/
-   if ( argc != 3 )
+   if ( argc != 4 )
    {
-      printf( "Usage:  ew2mongo <ringname> <mongo connection URI> \n" );
+      printf( "Usage:  ew2mongo <ringname> <mongo connection URI> <database name>\n" );
       return -1;
    }
 
@@ -208,7 +208,7 @@ data = (long *) ((char *) &tpkt + sizeof(TRACE2X_HEADER));
    mongoc_init ();
    client = mongoc_client_new (argv[2]);
    // TODO instead of ew_msgs, the collection should be named after the wave ring
-   collection = mongoc_client_get_collection (client, "meteor", "ew_msgs");
+   collection = mongoc_client_get_collection (client, argv[3], "ew_msgs");
     
 /* Flush all old messages from the ring
    ************************************/

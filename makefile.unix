@@ -2,7 +2,7 @@ LINUX_FLAGS=-lpthread -lm
 SOLARIS_FLAGS=-lposix4
 SPECIFIC_FLAGS = $($(PLATFORM)_FLAGS)
 
-CFLAGS=${GLOBALFLAGS} $(pkg-config --cflags --libs libmongoc-1.0) -L/usr/local/lib/ -I/usr/include/libbson-1.0/ -I/usr/include/libmongoc-1.0/ -g
+CFLAGS=${GLOBALFLAGS} $(pkg-config --cflags --libs libmongoc-1.0) -L/usr/local/lib/ -I/usr/include/libbson-1.0/ -I/usr/include/libmongoc-1.0/ -I/usr/local/include/libbson-1.0/ -I/usr/local/include/libmongoc-1.0/ -g
 
 B = $(EW_HOME)/$(EW_VERSION)/bin
 L = $(EW_HOME)/$(EW_VERSION)/lib
